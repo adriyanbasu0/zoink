@@ -40,33 +40,12 @@ void symbol_destroy(Symbol* symbol) {
     // For now, this is a simplification. A better way would be to have a type_is_singleton() check.
     // This requires types.c to expose these or a helper function.
     // Hacky direct comparison for now, assuming these are accessible (they are not directly from here).
-    // This needs a proper fix by making predefined types accessible or changing ownership rules.
-
-    // TEMPORARY WORKAROUND: We need a way to know if a type is predefined.
-    // For now, we'll assume that if a symbol's type is primitive and its name matches
-    // one of the predefined ones, it's a shared type. This is not robust.
-    // A robust solution involves either:
-    // 1. Symbol->type is always cloned if not a primitive, primitives are singletons.
-    // 2. A flag in Type struct: is_singleton.
-    // 3. Comparing symbol->type against known singleton pointers (requires access to them).
-
-    // Let's go with option 3 by declaring them extern for now (VERY HACKY for this fix)
-    // This will be properly fixed when type system is more robust.
-    extern Type* type_i32;
-    extern Type* type_string;
-    extern Type* type_bool;
-    extern Type* type_void_instance;
-
-    bool is_predefined = false;
-    if (symbol->type == type_i32 || symbol->type == type_string ||
-        symbol->type == type_bool || symbol->type == type_void_instance) {
-        is_predefined = true;
-    }
-
-    if (!is_predefined) {
+    // If a symbol's type is one of the global predefined types, we should not destroy it here,
+    // as their lifecycle is managed by types_init_predefined and types_cleanup_predefined.
+    if (!type_is_predefined(symbol->type)) {
         type_destroy(symbol->type);
     }
-    // else: it's a predefined type, semantic_analyzer_destroy will handle it.
+    // else: it's a predefined type, types_cleanup_predefined() will handle it.
 
 
     if (symbol->kind == SYMBOL_ADT) {

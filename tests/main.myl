@@ -1,0 +1,86 @@
+// Test cases for ADT field type resolution
+
+// 1. ADT with fields of predefined types
+data Point {
+  x: i32,
+  y: i32
+}
+
+// 2. ADT with fields using its own generic type parameters
+data Box<T> {
+  value: T
+}
+
+data Pair<A, B> {
+  first: A,
+  second: B
+}
+
+// 3. ADT with fields of other defined ADTs
+data Value {
+  v: i32
+}
+
+data Node {
+  data: Value,
+  // next: Option<Node> // Recursive/complex ADT usage - might be for later
+}
+
+data Container {
+  item: Value,
+  size: i32
+}
+
+// 4. Error: Field with an undefined type
+data BadBox {
+  item: NonExistentType // Error: Unknown type name 'NonExistentType'
+}
+
+// 5. Error: Field using a variable name as a type
+let my_var = 10;
+
+data VarAsType {
+  // item: my_var // Error: Expected a type name, but 'my_var' refers to a variable
+  // This specific case might require parser support to distinguish type contexts from expression contexts.
+  // For now, if 'my_var' is not a type in symbol table, it might fall under 'Unknown type name'.
+  // Let's add a direct type name that matches a variable to test the semantic check.
+  // Assume 'my_var_type' is not defined as a type.
+  // If we had a variable `let my_var_type = 42;`
+  // field: my_var_type // This should be an error if my_var_type is a variable symbol
+}
+
+// More specific test for "symbol exists but is not a type"
+data Foo {} // Define Foo as an ADT
+let foo_instance = Foo {};
+
+data UsesVarAsType {
+    // field: foo_instance // Error: Expected a type name, but 'foo_instance' refers to a variable
+    // This depends on whether the parser allows identifiers that are not type names in type positions.
+    // If the parser expects a type identifier, and foo_instance is a variable,
+    // the lookup in resolve_type_for_token should find foo_instance,
+    // see it's a SYMBOL_VARIABLE, and report an error.
+    // Let's simulate this by trying to use a known variable's name if it were a type.
+    // This test is a bit tricky without knowing exactly how the parser handles this.
+    // The current implementation of resolve_type_for_token will check symbol table.
+    // If 'my_var' (from above) is in symbol table as a variable, it should trigger:
+    // "Expected a type name, but 'my_var' refers to a variable."
+    field_using_var_name: my_var
+}
+
+
+// Test simple let statements to ensure basic semantic analysis still works
+let a = 10;
+let b = "hello";
+
+// Test ADT instantiation (though type checking for this is not yet implemented)
+let p = Point { x: 1, y: 2 };
+let b1 = Box<i32> { value: 100 };
+// let b2 = Box<String> { value: "test" }; // String type for generics not fully handled yet by Box<T> example
+
+let c = Container { item: Value { v: 123 }, size: 1 };
+
+// Test redefinition error for ADTs
+// data Point { z: bool } // Error: ADT with this name already defined
+
+// Test redefinition error for variables
+// let a = true; // Error: Variable with this name already defined

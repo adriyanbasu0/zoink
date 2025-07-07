@@ -128,5 +128,21 @@ void adt_variant_symbol_destroy(ADTVariantSymbol* var_sym);
 ADTFieldSymbol* adt_field_symbol_create(Token name, Type* type);
 void adt_field_symbol_destroy(ADTFieldSymbol* field_sym);
 
+// --- Predefined Types ---
+// Globally accessible singleton instances for predefined types.
+// These are initialized by types_init_predefined() and cleaned up by types_cleanup_predefined().
+extern Type* type_i32_instance;
+extern Type* type_string_instance;
+extern Type* type_bool_instance;
+extern Type* type_void_instance_ptr; // Renamed to avoid conflict with type_void_create
+
+// Initialize and cleanup predefined types.
+// These should be called once, typically at the start and end of the semantic analysis phase.
+void types_init_predefined(void);
+void types_cleanup_predefined(void);
+
+// Helper to check if a type is one of the predefined singletons.
+bool type_is_predefined(Type* type);
+
 
 #endif // TYPES_H

@@ -24,43 +24,64 @@ static void semantic_error_general(SemanticAnalyzer* analyzer, const char* messa
 }
 
 
-// --- Predefined Types ---
-// In a more complete system, these would be part of a prelude or core library.
-// For now, we can hardcode them or have a way to register them.
-static Type* type_i32 = NULL;
-static Type* type_string = NULL;
-static Type* type_bool = NULL; // For later
-static Type* type_void_instance = NULL;
+// --- Helper Functions ---
 
-static void initialize_predefined_types() {
-    // Ensure these are singletons. These tokens are literals, their lexemes are string literals.
-    if (!type_i32) {
-        type_i32 = type_primitive_create((Token){.type=TOKEN_IDENTIFIER, .lexeme="i32", .length=3, .line=0, .col=0});
+// Resolves a type name token to a Type object.
+// Checks ADT's own generic parameters, then predefined types, then the symbol table.
+// - adt_generic_params: DynamicArray of TypeGenericParam* for the ADT being defined.
+// Returns a Type*. If a new type is allocated (e.g. TypeADT, TypeError), it's owned by the caller.
+// If a shared type is returned (generic param, predefined), it's not.
+static Type* resolve_type_for_token(SemanticAnalyzer* analyzer, Token type_name_token, DynamicArray* adt_generic_params) {
+    // 1. Check ADT's own generic parameters
+    if (adt_generic_params) {
+        for (size_t i = 0; i < da_count(adt_generic_params); ++i) {
+            TypeGenericParam* gp_type = (TypeGenericParam*)da_get(adt_generic_params, i);
+            if (gp_type->name.length == type_name_token.length &&
+                strncmp(gp_type->name.lexeme, type_name_token.lexeme, type_name_token.length) == 0) {
+                return (Type*)gp_type; // Found generic parameter, return shared Type*
+            }
+        }
     }
-    if (!type_string) {
-        type_string = type_primitive_create((Token){.type=TOKEN_IDENTIFIER, .lexeme="String", .length=6, .line=0, .col=0});
-    }
-    if (!type_bool) {
-        type_bool = type_primitive_create((Token){.type=TOKEN_IDENTIFIER, .lexeme="bool", .length=4, .line=0, .col=0});
-    }
-    if (!type_void_instance) {
-        type_void_instance = type_void_create(); // Void doesn't need a name token
-    }
-    // TODO: Add these to the global symbol table if they need to be looked up by name during type resolution.
-    // For example, when resolving field types in ADTs.
-}
 
-static void cleanup_predefined_types() {
-    // These are shared, so destroy them only once at the end.
-    // The type_destroy function itself is safe for NULL.
-    type_destroy(type_i32);
-    type_i32 = NULL; // Nullify to prevent double free if cleanup is called multiple times by mistake
-    type_destroy(type_string);
-    type_string = NULL;
-    type_destroy(type_bool);
-    type_bool = NULL;
-    type_destroy(type_void_instance);
-    type_void_instance = NULL;
+    // 2. Check predefined types
+    // TODO: Make this more robust, perhaps a helper in types.c or a map if many predefined types
+    if (type_name_token.length == 3 && strncmp(type_name_token.lexeme, "i32", 3) == 0) {
+        return type_i32_instance; // Shared predefined type
+    }
+    if (type_name_token.length == 6 && strncmp(type_name_token.lexeme, "String", 6) == 0) {
+        return type_string_instance; // Shared predefined type
+    }
+    if (type_name_token.length == 4 && strncmp(type_name_token.lexeme, "bool", 4) == 0) {
+        return type_bool_instance; // Shared predefined type
+    }
+    // Add other predefined types like 'void' if necessary, though 'void' fields are unusual.
+
+    // 3. Look up in symbol table
+    Symbol* found_symbol = symbol_table_lookup(analyzer->sym_table, type_name_token);
+    if (found_symbol) {
+        if (found_symbol->kind == SYMBOL_ADT) {
+            // It's another ADT. Create a TypeADT instance for it.
+            // For now, type_args is NULL (or empty DA). Handling generic ADTs as fields is more complex.
+            // The created TypeADT will be owned by the caller (specifically, the ADTFieldSymbol).
+            return type_adt_create(type_name_token, NULL, found_symbol);
+        } else {
+            // Found a symbol, but it's not a type (e.g., a variable or function used as a type)
+            char err_msg[256];
+            snprintf(err_msg, sizeof(err_msg),
+                     "Expected a type name, but '%.*s' refers to a %s.",
+                     (int)type_name_token.length, type_name_token.lexeme,
+                     // TODO: Add a symbol_kind_to_string helper for better error messages
+                     found_symbol->kind == SYMBOL_VARIABLE ? "variable" : "non-type symbol");
+            semantic_error_at_token(analyzer, type_name_token, err_msg);
+            return type_error_create(); // Caller owns this
+        }
+    } else {
+        // Type name not found anywhere
+        char err_msg[256];
+        snprintf(err_msg, sizeof(err_msg), "Unknown type name '%.*s'.", (int)type_name_token.length, type_name_token.lexeme);
+        semantic_error_at_token(analyzer, type_name_token, err_msg);
+        return type_error_create(); // Caller owns this
+    }
 }
 
 
@@ -100,17 +121,10 @@ static void analyze_stmt_data(SemanticAnalyzer* analyzer, StmtData* stmt) {
             field_symbols = da_create(da_count(ast_variant->fields), sizeof(ADTFieldSymbol*));
             for (size_t j = 0; j < da_count(ast_variant->fields); ++j) {
                 ADTVariantField* ast_field = (ADTVariantField*)da_get(ast_variant->fields, j);
-                // Resolve ast_field->type_name_token to a Type*.
-                // For Phase 1: This is simplified. We'd look up type_name_token in scope
-                // (including generic_param_types).
-                Type* field_type = type_unknown_create(); // Placeholder
-                // Example of basic resolution (needs much more work):
-                // If ast_field->type_name_token matches a generic param, use that TypeGenericParam.
-                // Else if it matches a known primitive (i32, String), use that.
-                // Else if it matches another defined ADT, create a TypeADT for it.
-                // Else, error: unknown type.
-                // For now, all fields are <unknown>.
-                // TODO: Implement proper type resolution for fields.
+                Type* field_type = resolve_type_for_token(analyzer, ast_field->type_name_token, generic_param_types);
+                // resolve_type_for_token returns a type that ADTFieldSymbol will take ownership of if it's new,
+                // or it's a shared type (generic param, predefined) that doesn't need deep freeing by ADTFieldSymbol.
+                // If field_type is an error type, it will also be owned and correctly freed.
 
                 ADTFieldSymbol* field_sym = adt_field_symbol_create(ast_field->name, field_type);
                 da_push(field_symbols, field_sym);
@@ -167,10 +181,10 @@ static void analyze_stmt_let(SemanticAnalyzer* analyzer, StmtLet* stmt) {
             ExprLiteral* lit_expr = (ExprLiteral*)stmt->initializer;
             if (lit_expr->literal.type == TOKEN_INTEGER) {
                 type_destroy(var_type); // Destroy the old unknown
-                var_type = type_i32; // Share the predefined i32 type
+                var_type = type_i32_instance; // Use global predefined i32 type
             } else if (lit_expr->literal.type == TOKEN_STRING) {
                 type_destroy(var_type);
-                var_type = type_string; // Share the predefined String type
+                var_type = type_string_instance; // Use global predefined String type
             }
             // Add other literals like bool, float later
         } else if (stmt->initializer->type == EXPR_VARIABLE) {
@@ -257,14 +271,14 @@ SemanticAnalyzer* semantic_analyzer_create() {
         return NULL;
     }
     analyzer->had_error = false;
-    initialize_predefined_types(); // Initialize singletons like i32, String
+    types_init_predefined(); // Initialize global predefined types
     return analyzer;
 }
 
 void semantic_analyzer_destroy(SemanticAnalyzer* analyzer) {
     if (!analyzer) return;
     symbol_table_destroy(analyzer->sym_table);
-    cleanup_predefined_types(); // Free singletons
+    types_cleanup_predefined(); // Cleanup global predefined types
     free(analyzer);
 }
 
