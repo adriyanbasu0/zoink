@@ -248,3 +248,47 @@ void adt_field_symbol_destroy(ADTFieldSymbol* field_sym) {
     type_destroy(field_sym->type); // Destroy the type owned by the field
     free(field_sym);
 }
+
+// --- Global Predefined Type Instances ---
+Type* type_i32_instance = NULL;
+Type* type_string_instance = NULL;
+Type* type_bool_instance = NULL;
+Type* type_void_instance_ptr = NULL;
+
+void types_init_predefined(void) {
+    // Ensure these are singletons. These tokens are literals, their lexemes are string literals.
+    // The line/col numbers are not critical here as these are for internal predefined types.
+    if (!type_i32_instance) {
+        type_i32_instance = type_primitive_create((Token){.type=TOKEN_IDENTIFIER, .lexeme="i32", .length=3, .line=0, .col=0});
+    }
+    if (!type_string_instance) {
+        type_string_instance = type_primitive_create((Token){.type=TOKEN_IDENTIFIER, .lexeme="String", .length=6, .line=0, .col=0});
+    }
+    if (!type_bool_instance) {
+        type_bool_instance = type_primitive_create((Token){.type=TOKEN_IDENTIFIER, .lexeme="bool", .length=4, .line=0, .col=0});
+    }
+    if (!type_void_instance_ptr) {
+        type_void_instance_ptr = type_void_create(); // Void doesn't need a name token
+    }
+}
+
+void types_cleanup_predefined(void) {
+    // These are shared, so destroy them only once at the end.
+    // The type_destroy function itself is safe for NULL.
+    type_destroy(type_i32_instance);
+    type_i32_instance = NULL;
+    type_destroy(type_string_instance);
+    type_string_instance = NULL;
+    type_destroy(type_bool_instance);
+    type_bool_instance = NULL;
+    type_destroy(type_void_instance_ptr);
+    type_void_instance_ptr = NULL;
+}
+
+bool type_is_predefined(Type* type) {
+    if (!type) return false;
+    return type == type_i32_instance ||
+           type == type_string_instance ||
+           type == type_bool_instance ||
+           type == type_void_instance_ptr;
+}

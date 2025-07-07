@@ -24,46 +24,6 @@ static void semantic_error_general(SemanticAnalyzer* analyzer, const char* messa
 }
 
 
-// --- Predefined Types ---
-// In a more complete system, these would be part of a prelude or core library.
-// For now, we can hardcode them or have a way to register them.
-static Type* type_i32 = NULL;
-static Type* type_string = NULL;
-static Type* type_bool = NULL; // For later
-static Type* type_void_instance = NULL;
-
-static void initialize_predefined_types() {
-    // Ensure these are singletons. These tokens are literals, their lexemes are string literals.
-    if (!type_i32) {
-        type_i32 = type_primitive_create((Token){.type=TOKEN_IDENTIFIER, .lexeme="i32", .length=3, .line=0, .col=0});
-    }
-    if (!type_string) {
-        type_string = type_primitive_create((Token){.type=TOKEN_IDENTIFIER, .lexeme="String", .length=6, .line=0, .col=0});
-    }
-    if (!type_bool) {
-        type_bool = type_primitive_create((Token){.type=TOKEN_IDENTIFIER, .lexeme="bool", .length=4, .line=0, .col=0});
-    }
-    if (!type_void_instance) {
-        type_void_instance = type_void_create(); // Void doesn't need a name token
-    }
-    // TODO: Add these to the global symbol table if they need to be looked up by name during type resolution.
-    // For example, when resolving field types in ADTs.
-}
-
-static void cleanup_predefined_types() {
-    // These are shared, so destroy them only once at the end.
-    // The type_destroy function itself is safe for NULL.
-    type_destroy(type_i32);
-    type_i32 = NULL; // Nullify to prevent double free if cleanup is called multiple times by mistake
-    type_destroy(type_string);
-    type_string = NULL;
-    type_destroy(type_bool);
-    type_bool = NULL;
-    type_destroy(type_void_instance);
-    type_void_instance = NULL;
-}
-
-
 // --- Analysis of AST Nodes ---
 
 static void analyze_stmt_data(SemanticAnalyzer* analyzer, StmtData* stmt) {
@@ -167,10 +127,10 @@ static void analyze_stmt_let(SemanticAnalyzer* analyzer, StmtLet* stmt) {
             ExprLiteral* lit_expr = (ExprLiteral*)stmt->initializer;
             if (lit_expr->literal.type == TOKEN_INTEGER) {
                 type_destroy(var_type); // Destroy the old unknown
-                var_type = type_i32; // Share the predefined i32 type
+                var_type = type_i32_instance; // Use global predefined i32 type
             } else if (lit_expr->literal.type == TOKEN_STRING) {
                 type_destroy(var_type);
-                var_type = type_string; // Share the predefined String type
+                var_type = type_string_instance; // Use global predefined String type
             }
             // Add other literals like bool, float later
         } else if (stmt->initializer->type == EXPR_VARIABLE) {
@@ -257,14 +217,14 @@ SemanticAnalyzer* semantic_analyzer_create() {
         return NULL;
     }
     analyzer->had_error = false;
-    initialize_predefined_types(); // Initialize singletons like i32, String
+    types_init_predefined(); // Initialize global predefined types
     return analyzer;
 }
 
 void semantic_analyzer_destroy(SemanticAnalyzer* analyzer) {
     if (!analyzer) return;
     symbol_table_destroy(analyzer->sym_table);
-    cleanup_predefined_types(); // Free singletons
+    types_cleanup_predefined(); // Cleanup global predefined types
     free(analyzer);
 }
 
